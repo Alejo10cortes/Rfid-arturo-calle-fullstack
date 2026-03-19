@@ -1,0 +1,268 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  role         UserRole @default(OPERATOR)
+  isActive     Boolean  @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+  alerts        Alert[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique @db.VarChar(512)
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  revoked   Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+// ─── RFID READERS ─────────────────────────────────────────────────────────────
+
+model Reader {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  ipAddress   String       @map("ip_address")
+  port        Int          @default(5084)       // Puerto LLRP estándar
+  zone        String
+  location    String?
+  firmware    String?
+  model       String?
+  serialNumber String?     @map("serial_number")
+  status      ReaderStatus @default(OFFLINE)
+  isEnabled   Boolean      @default(true) @map("is_enabled")
+  antennaCount Int         @default(4) @map("antenna_count")
+  txPower     Int          @default(30)  @map("tx_power")    // dBm
+  rxSensitivity Int        @default(-70) @map("rx_sensitivity") // dBm
+  frequencyMin Int         @default(860000) @map("frequency_min") // kHz — 860 MHz
+  frequencyMax Int         @default(960000) @map("frequency_max") // kHz — 960 MHz
+  lastSeenAt  DateTime?    @map("last_seen_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  scanEvents   ScanEvent[]
+  readerLogs   ReaderLog[]
+  alerts       Alert[]
+
+  @@index([status])
+  @@index([zone])
+  @@map("readers")
+}
+
+model ReaderLog {
+  id        String   @id @default(uuid())
+  readerId  String   @map("reader_id")
+  event     String   // CONNECTED, DISCONNECTED, ERROR, CONFIG_CHANGED
+  message   String?  @db.Text
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  reader Reader @relation(fields: [readerId], references: [id], onDelete: Cascade)
+
+  @@index([readerId])
+  @@index([createdAt])
+  @@map("reader_logs")
+}
+
+enum ReaderStatus {
+  ONLINE
+  OFFLINE
+  ERROR
+  CONNECTING
+}
+
+// ─── INVENTORY ────────────────────────────────────────────────────────────────
+
+model Product {
+  id          String  @id @default(uuid())
+  sku         String  @unique
+  name        String
+  description String? @db.Text
+  brand       String  @default("Arturo Calle")
+  category    String?
+  color       String?
+  size        String?
+  imageUrl    String? @map("image_url")
+  price       Decimal @default(0) @db.Decimal(12, 2)
+  isActive    Boolean @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  rfidTags    RFIDTag[]
+
+  @@index([sku])
+  @@index([category])
+  @@map("products")
+}
+
+model RFIDTag {
+  id          String      @id @default(uuid())
+  epc         String      @unique  // Electronic Product Code — identificador único del tag
+  tid         String?     @unique  // Tag Identifier — número de serie del chip
+  productId   String?     @map("product_id")
+  status      TagStatus   @default(ACTIVE)
+  currentZone String?     @map("current_zone")
+  currentReaderId String? @map("current_reader_id")
+  lastRssi    Int?        @map("last_rssi")          // dBm señal más reciente
+  lastSeenAt  DateTime?   @map("last_seen_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  product    Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  scanEvents ScanEvent[]
+
+  @@index([epc])
+  @@index([productId])
+  @@index([currentZone])
+  @@map("rfid_tags")
+}
+
+enum TagStatus {
+  ACTIVE
+  LOST
+  DAMAGED
+  RETIRED
+}
+
+// ─── SCAN EVENTS ─────────────────────────────────────────────────────────────
+
+model ScanEvent {
+  id         String   @id @default(uuid())
+  epc        String
+  tagId      String?  @map("tag_id")
+  readerId   String   @map("reader_id")
+  antennaId  Int      @default(1) @map("antenna_id")
+  rssi       Int      // Received Signal Strength Indicator dBm
+  phaseAngle Float?   @map("phase_angle")  // Para localización por fase
+  doppler    Float?                          // Para detección de movimiento
+  frequency  Int?     // kHz — frecuencia de lectura real
+  zone       String
+  sessionId  String?  @map("session_id")   // Agrupa eventos de una sesión de escaneo
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tag    RFIDTag? @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  reader Reader   @relation(fields: [readerId], references: [id], onDelete: Cascade)
+
+  @@index([epc])
+  @@index([readerId])
+  @@index([zone])
+  @@index([createdAt])
+  @@index([sessionId])
+  @@map("scan_events")
+}
+
+// ─── INVENTORY SNAPSHOTS ──────────────────────────────────────────────────────
+
+model InventorySnapshot {
+  id          String   @id @default(uuid())
+  zone        String?
+  totalTags   Int      @map("total_tags")
+  scannedTags Int      @map("scanned_tags")
+  missingTags Int      @map("missing_tags")
+  accuracy    Float    // % precisión del inventario
+  duration    Int      // segundos que tomó el conteo
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdBy   String   @map("created_by")
+
+  @@index([zone])
+  @@index([createdAt])
+  @@map("inventory_snapshots")
+}
+
+// ─── ALERTS ───────────────────────────────────────────────────────────────────
+
+model Alert {
+  id         String      @id @default(uuid())
+  type       AlertType
+  severity   AlertSeverity
+  title      String
+  message    String      @db.Text
+  readerId   String?     @map("reader_id")
+  epc        String?
+  zone       String?
+  metadata   Json?
+  isRead     Boolean     @default(false) @map("is_read")
+  isResolved Boolean     @default(false) @map("is_resolved")
+  resolvedBy String?     @map("resolved_by")
+  resolvedAt DateTime?   @map("resolved_at")
+  createdAt  DateTime    @default(now()) @map("created_at")
+
+  reader     Reader?     @relation(fields: [readerId], references: [id], onDelete: SetNull)
+  resolvedByUser User?   @relation(fields: [resolvedBy], references: [id], onDelete: SetNull)
+
+  @@index([type])
+  @@index([severity])
+  @@index([isResolved])
+  @@index([createdAt])
+  @@map("alerts")
+}
+
+enum AlertType {
+  READER_OFFLINE
+  READER_ERROR
+  LOW_STOCK
+  OUT_OF_STOCK
+  TAG_NOT_FOUND
+  INVENTORY_DISCREPANCY
+  SYSTEM
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+// ─── AUDIT ────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  action     String
+  resource   String
+  resourceId String?  @map("resource_id")
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([resource])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

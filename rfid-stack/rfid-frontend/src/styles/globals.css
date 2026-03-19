@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    @apply bg-ink text-cream font-ui;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar        { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track  { @apply bg-ink-2; }
+  ::-webkit-scrollbar-thumb  { @apply bg-ink-5 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-muted; }
+
+  input, textarea, select {
+    @apply bg-transparent outline-none;
+  }
+
+  ::selection { @apply bg-gold/20 text-cream; }
+}
+
+@layer components {
+  /* Cards */
+  .card {
+    @apply bg-ink-2 border border-white/5 rounded-xl;
+  }
+  .card-hover {
+    @apply transition-all duration-200 hover:border-white/10 hover:shadow-glow;
+  }
+
+  /* Labels */
+  .label-mono {
+    @apply font-mono text-[9px] text-muted-2 uppercase tracking-[0.15em];
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 font-ui font-semibold
+           text-xs uppercase tracking-[0.08em] rounded-lg transition-all duration-200
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary  { @apply btn bg-gold text-ink hover:bg-gold-2 px-4 py-2.5; }
+  .btn-secondary{ @apply btn bg-ink-3 text-cream border border-white/8 hover:bg-ink-4 px-4 py-2.5; }
+  .btn-ghost    { @apply btn text-muted-2 hover:text-cream hover:bg-ink-3 px-3 py-2; }
+  .btn-danger   { @apply btn bg-danger/10 text-red-400 border border-danger/30 hover:bg-danger/20 px-4 py-2.5; }
+  .btn-icon     { @apply btn w-9 h-9 bg-ink-3 border border-white/6 hover:border-white/15 text-muted-2 hover:text-cream rounded-lg; }
+
+  /* Inputs */
+  .input {
+    @apply w-full bg-ink-3 border border-white/8 rounded-lg px-3 py-2.5
+           font-mono text-sm text-cream placeholder:text-muted
+           focus:border-gold/40 focus:ring-1 focus:ring-gold/20
+           transition-all duration-200;
+  }
+
+  /* Chips */
+  .chip-online  { @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-[9px] uppercase tracking-wider bg-ok/10 text-ok border border-ok/25; }
+  .chip-offline { @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-[9px] uppercase tracking-wider bg-white/4 text-muted-2 border border-white/8; }
+  .chip-error   { @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-[9px] uppercase tracking-wider bg-danger/10 text-red-400 border border-danger/25; }
+  .chip-warn    { @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-[9px] uppercase tracking-wider bg-warn/10 text-warn border border-warn/25; }
+
+  /* Table */
+  .tbl-head { @apply font-mono text-[9px] text-muted-2 uppercase tracking-[0.12em] pb-3 text-left font-normal; }
+  .tbl-row  { @apply border-b border-white/[0.03] hover:bg-ink-3/50 transition-colors; }
+  .tbl-cell { @apply py-3.5 pr-4 font-mono text-[11px] text-muted-3; }
+
+  /* Page enter animation */
+  .page-enter {
+    animation: fadeUp 0.35s ease both;
+  }
+}
+
+@layer utilities {
+  .text-display { @apply font-display; }
+  .border-card  { @apply border border-white/5; }
+  .bg-noise     {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  }
+}

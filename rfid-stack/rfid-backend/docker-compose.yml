@@ -1,0 +1,73 @@
+version: "3.9"
+
+services:
+  # ── MySQL ─────────────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: rfid_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password_change_me
+      MYSQL_DATABASE: rfid_db
+      MYSQL_USER: rfid_user
+      MYSQL_PASSWORD: rfid_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - rfid_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "rfid_user", "-prfid_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Backend ───────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      target: production
+    container_name: rfid_api
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: "mysql://rfid_user:rfid_password@mysql:3306/rfid_db"
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    networks:
+      - rfid_net
+    # Acceso a la red de las lectoras RFID físicas (ajustar al segmento real)
+    # extra_hosts:
+    #   - "reader-a1:192.168.1.101"
+    #   - "reader-a2:192.168.1.102"
+
+  # ── Adminer (DB UI) ───────────────────────────────────────────────────────────
+  adminer:
+    image: adminer:4
+    container_name: rfid_adminer
+    restart: unless-stopped
+    depends_on:
+      - mysql
+    ports:
+      - "8080:8080"
+    networks:
+      - rfid_net
+    profiles: ["tools"]
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  rfid_net:
+    driver: bridge

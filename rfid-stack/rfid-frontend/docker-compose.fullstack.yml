@@ -1,0 +1,82 @@
+version: "3.9"
+
+# ── Stack completo: MySQL + Backend RFID + Frontend ───────────────────────────
+# Uso: docker-compose up -d
+# Luego: docker-compose exec api npm run db:seed
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: rfid_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password_change_me
+      MYSQL_DATABASE: rfid_db
+      MYSQL_USER: rfid_user
+      MYSQL_PASSWORD: rfid_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - rfid_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "rfid_user", "-prfid_password"]
+      interval: 10s; timeout: 5s; retries: 10; start_period: 30s
+
+  api:
+    build:
+      context: ./rfid-backend
+      target: production
+    container_name: rfid_api
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "mysql://rfid_user:rfid_password@mysql:3306/rfid_db"
+      NODE_ENV: production
+      PORT: 3000
+      JWT_SECRET: change_me_in_production_at_least_32_characters
+      JWT_REFRESH_SECRET: change_me_refresh_in_production_min_32_chars
+      CORS_ORIGINS: "http://localhost,http://frontend"
+      RFID_REAL_READERS: "false"
+      LOW_STOCK_THRESHOLD: "10"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    networks:
+      - rfid_net
+
+  frontend:
+    build:
+      context: ./rfid-frontend
+      target: production
+    container_name: rfid_frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+    networks:
+      - rfid_net
+
+  adminer:
+    image: adminer:4
+    container_name: rfid_adminer
+    restart: unless-stopped
+    depends_on: [mysql]
+    ports:
+      - "8080:8080"
+    networks:
+      - rfid_net
+    profiles: ["tools"]
+
+volumes:
+  mysql_data:
+
+networks:
+  rfid_net:
+    driver: bridge

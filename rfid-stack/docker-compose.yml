@@ -1,0 +1,120 @@
+version: "3.9"
+
+# ╔══════════════════════════════════════════════════════════════╗
+# ║   Arturo Calle — RFID Stack  (MySQL + Backend + Frontend)   ║
+# ║   Levanta con: docker-compose up -d --build                  ║
+# ║   Seed inicial: docker-compose exec api npm run db:seed      ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+services:
+
+  # ── MySQL 8 ─────────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: rfid_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password_change_me}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rfid_db}
+      MYSQL_USER: ${MYSQL_USER:-rfid_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-rfid_password}
+    ports:
+      - "${MYSQL_HOST_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./rfid-backend/docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - rfid_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "rfid_user", "-prfid_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Backend API (Node/Express + Prisma) ─────────────────────────────────────
+  api:
+    build:
+      context: ./rfid-backend
+      target: production
+    container_name: rfid_api
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      API_PREFIX: /api/v1
+      DATABASE_URL: "mysql://${MYSQL_USER:-rfid_user}:${MYSQL_PASSWORD:-rfid_password}@mysql:3306/${MYSQL_DATABASE:-rfid_db}"
+      JWT_SECRET: ${JWT_SECRET:-change_me_in_production_at_least_32_characters_long}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change_me_refresh_in_production_min_32_chars_long}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      # El frontend llega al API a través del contenedor nginx (mismo docker network)
+      CORS_ORIGINS: "http://localhost,http://localhost:80,http://frontend"
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-900000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-200}
+      RFID_REAL_READERS: ${RFID_REAL_READERS:-false}
+      RFID_RECONNECT_INTERVAL: ${RFID_RECONNECT_INTERVAL:-5000}
+      RFID_HEARTBEAT_TIMEOUT: ${RFID_HEARTBEAT_TIMEOUT:-30000}
+      LOW_STOCK_THRESHOLD: ${LOW_STOCK_THRESHOLD:-10}
+      ALERT_CHECK_CRON: ${ALERT_CHECK_CRON:-"*/5 * * * *"}
+      REPORTS_OUTPUT_DIR: /app/reports
+    ports:
+      - "${API_HOST_PORT:-3000}:3000"   # expuesto para desarrollo/debug; en prod se puede quitar
+    volumes:
+      - api_logs:/app/logs
+      - api_reports:/app/reports
+    networks:
+      - rfid_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    # Si tienes lectoras RFID físicas en una subred, descomenta y ajusta:
+    # extra_hosts:
+    #   - "reader-a1:192.168.1.101"
+    #   - "reader-a2:192.168.1.102"
+
+  # ── Frontend (React/Vite → nginx) ────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./rfid-frontend
+      target: production
+    container_name: rfid_frontend
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_HOST_PORT:-80}:80"
+    networks:
+      - rfid_net
+
+  # ── Adminer — UI para MySQL (opcional, solo con --profile tools) ─────────────
+  adminer:
+    image: adminer:4
+    container_name: rfid_adminer
+    restart: unless-stopped
+    depends_on:
+      - mysql
+    ports:
+      - "${ADMINER_HOST_PORT:-8080}:8080"
+    networks:
+      - rfid_net
+    profiles: ["tools"]
+
+volumes:
+  mysql_data:
+    driver: local
+  api_logs:
+    driver: local
+  api_reports:
+    driver: local
+
+networks:
+  rfid_net:
+    driver: bridge
